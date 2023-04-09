@@ -34,15 +34,16 @@ bool __time_critical_func(cond_wait_until)(cond_t *cond, mutex_t *mtx, absolute_
         spin_lock_unsafe_blocking(cond->core.spin_lock);
     }
 
-    // Release the mutex but without restoring interrupts and notify.
     mtx->owner = LOCK_INVALID_OWNER_ID;
-    if (!same_spinlock) {
-        spin_unlock_unsafe(mtx->core.spin_lock);
-    }
 
     uint64_t current_broadcast = cond->broadcast_count;
 
     if (lock_is_owner_id_valid(cond->waiter)) {
+        // Release the mutex but without restoring interrupts and notify.
+        if (!same_spinlock) {
+            spin_unlock_unsafe(mtx->core.spin_lock);
+        }
+
         // There is a valid owner of the condition variable: we are not the
         // first waiter.
         // First iteration: notify
@@ -68,8 +69,11 @@ bool __time_critical_func(cond_wait_until)(cond_t *cond, mutex_t *mtx, absolute_
             save = spin_lock_blocking(cond->core.spin_lock);
         } while (true);
     } else {
-        // Notify to finish release of mutex
-        __sev();
+        // Release the mutex but without restoring interrupts
+        if (!same_spinlock) {
+            uint32_t disabled_ints = save_and_disable_interrupts();
+            lock_internal_spin_unlock_with_notify(&mtx->core, disabled_ints);
+        }
     }
 
     if (success && cond->broadcast_count == current_broadcast) {
@@ -97,13 +101,14 @@ bool __time_critical_func(cond_wait_until)(cond_t *cond, mutex_t *mtx, absolute_
     }
 
     // We got the signal (or timed out)
-    // Acquire the mutex spin lock and release the core spin lock.
-    if (!same_spinlock) {
-        spin_lock_unsafe_blocking(mtx->core.spin_lock);
-        spin_unlock_unsafe(cond->core.spin_lock);
-    }
 
     if (lock_is_owner_id_valid(mtx->owner)) {
+        // Acquire the mutex spin lock and release the core spin lock.
+        if (!same_spinlock) {
+            spin_lock_unsafe_blocking(mtx->core.spin_lock);
+            spin_unlock_unsafe(cond->core.spin_lock);
+        }
+
         // Another core holds the mutex.
         // First iteration: notify
         lock_internal_spin_unlock_with_notify(&mtx->core, save);
@@ -118,12 +123,19 @@ bool __time_critical_func(cond_wait_until)(cond_t *cond, mutex_t *mtx, absolute_
             save = spin_lock_blocking(mtx->core.spin_lock);
         } while (true);
     } else {
-        // Notify to finish release of condition variable
-        __sev();
+        // Acquire the mutex spin lock and release the core spin lock
+        // with notify but without restoring interrupts
+        if (!same_spinlock) {
+            spin_lock_unsafe_blocking(mtx->core.spin_lock);
+            uint32_t disabled_ints = save_and_disable_interrupts();
+            lock_internal_spin_unlock_with_notify(&cond->core, disabled_ints);
+        }
     }
 
     // Eventually hold the mutex.
     mtx->owner = caller;
+
+    // Restore the interrupts now
     spin_unlock(mtx->core.spin_lock, save);
 
     return success;
