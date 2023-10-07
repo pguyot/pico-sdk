@@ -106,8 +106,8 @@ new_git_repository(
 new_git_repository(
     name = "cyw43-driver",
     build_file = "//src/rp2_common/pico_cyw43_driver:cyw43-driver.BUILD",
-    commit = "cf924bb04c8984675ca0fc2178f082e404e048c3",  # keep-in-sync-with-submodule: lib/cyw43-driver
-    remote = "https://github.com/georgerobotics/cyw43-driver.git",
+    commit = "1b3bbe103c0d09dc542c43bbf2d07676213c04b0",  # keep-in-sync-with-submodule: lib/cyw43-driver
+    remote = "https://github.com/pguyot/cyw43-driver.git",
 )
 
 # TODO: Provide lwip as a proper Bazel module.
